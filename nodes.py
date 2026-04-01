@@ -656,8 +656,7 @@ class SeeThrough_SavePSD:
             },
         }
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("info_file",)
+    RETURN_TYPES = ()
     FUNCTION = "save"
     CATEGORY = "SeeThrough"
     OUTPUT_NODE = True
@@ -676,6 +675,7 @@ class SeeThrough_SavePSD:
 
         sorted_tags = sorted(tag2pinfo.keys(), key=lambda t: tag2pinfo[t].get("depth_median", 1), reverse=True)
 
+        results = []
         layer_info_list = []
         for tag in sorted_tags:
             pinfo = tag2pinfo[tag]
@@ -689,6 +689,7 @@ class SeeThrough_SavePSD:
 
             layer_filename = f"{filename_prefix}_{ts}_{uid}_{tag}.png"
             Image.fromarray(img).save(os.path.join(output_dir, layer_filename))
+            results.append({"filename": layer_filename, "subfolder": "", "type": "output"})
 
             entry = {"name": tag, "filename": layer_filename,
                      "left": x1, "top": y1, "right": x2, "bottom": y2,
@@ -700,6 +701,7 @@ class SeeThrough_SavePSD:
                     Image.fromarray(depth, mode="L").save(os.path.join(output_dir, depth_filename))
                 else:
                     Image.fromarray(depth).save(os.path.join(output_dir, depth_filename))
+                results.append({"filename": depth_filename, "subfolder": "", "type": "output"})
                 entry["depth_filename"] = depth_filename
 
             layer_info_list.append(entry)
@@ -709,13 +711,10 @@ class SeeThrough_SavePSD:
         with open(info_path, "w", encoding="utf-8") as f:
             json.dump({"prefix": filename_prefix, "timestamp": f"{ts}_{uid}",
                        "layers": layer_info_list, "width": int(canvas_w), "height": int(canvas_h)}, f, indent=2)
+        results.append({"filename": info_filename, "subfolder": "", "type": "output"})
 
-        log_path = os.path.join(output_dir, "seethrough_psd_info.log")
-        with open(log_path, "w") as f:
-            f.write(info_filename)
-
-        print(f"[SeeThrough] {len(layer_info_list)} layers saved. Use 'Download PSD' button to generate PSD.", flush=True)
-        return (info_path,)
+        print(f"[SeeThrough] {len(layer_info_list)} layers saved, {len(results)} files registered as outputs.", flush=True)
+        return {"ui": {"images": results}}
 
 
 NODE_CLASS_MAPPINGS = {
