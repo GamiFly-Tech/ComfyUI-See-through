@@ -3,6 +3,8 @@ import sys
 import random
 import uuid
 from datetime import datetime
+import json
+from PIL import Image
 
 print("[SeeThrough] nodes.py: starting imports...", flush=True)
 
@@ -730,6 +732,125 @@ class SeeThrough_SavePSD:
         return {"ui": {"images": results}}
 
 
+class SeeThrough_SavePSD_API:
+    """Save See-through layer PNGs + metadata JSON with proper output tracking."""
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "parts": ("SEETHROUGH_PARTS",),
+                "filename_prefix": ("STRING", {"default": "seethrough"}),
+            },
+        }
+
+    RETURN_TYPES = ()
+    FUNCTION = "save"
+    CATEGORY = "SeeThrough"
+    OUTPUT_NODE = True
+
+    def save(self, parts, filename_prefix="seethrough"):
+        tag2pinfo = parts["tag2pinfo"]
+        frame_size = parts["frame_size"]
+        canvas_h, canvas_w = frame_size
+
+        output_dir = folder_paths.get_output_directory()
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        uid = str(uuid.uuid4())[:8]
+
+        # Sort layers by depth (furthest first = highest depth_median)
+        sorted_tags = sorted(
+            tag2pinfo.keys(),
+            key=lambda t: tag2pinfo[t].get("depth_median", 1),
+            reverse=True,
+        )
+
+        results = []  # ComfyUI output tracking list
+        layer_info_list = []
+
+        for tag in sorted_tags:
+            pinfo = tag2pinfo[tag]
+            img = pinfo.get("img")
+            if img is None:
+                continue
+
+            xyxy = pinfo.get("xyxy", [0, 0, img.shape[1], img.shape[0]])
+            x1, y1, x2, y2 = [int(v) for v in xyxy]
+            depth = pinfo.get("depth")
+
+            # Save layer PNG
+            layer_filename = f"{filename_prefix}_{ts}_{uid}_{tag}.png"
+            Image.fromarray(img).save(os.path.join(output_dir, layer_filename))
+            results.append({
+                "filename": layer_filename,
+                "subfolder": "",
+                "type": "output",
+            })
+
+            entry = {
+                "name": tag,
+                "filename": layer_filename,
+                "left": x1,
+                "top": y1,
+                "right": x2,
+                "bottom": y2,
+                "depth_median": float(pinfo.get("depth_median", 1)),
+            }
+
+            # Save depth PNG
+            if depth is not None:
+                depth_filename = f"{filename_prefix}_{ts}_{uid}_{tag}_depth.png"
+                if depth.dtype in (np.float32, np.float64):
+                    depth_img = (np.clip(depth, 0, 1) * 255).astype(np.uint8)
+                    Image.fromarray(depth_img, mode="L").save(
+                        os.path.join(output_dir, depth_filename)
+                    )
+                else:
+                    Image.fromarray(depth).save(
+                        os.path.join(output_dir, depth_filename)
+                    )
+                results.append({
+                    "filename": depth_filename,
+                    "subfolder": "",
+                    "type": "output",
+                })
+                entry["depth_filename"] = depth_filename
+
+            layer_info_list.append(entry)
+
+        # Save metadata JSON
+        info_filename = f"{filename_prefix}_{ts}_{uid}_layers.json"
+        info_path = os.path.join(output_dir, info_filename)
+        with open(info_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "prefix": filename_prefix,
+                    "timestamp": f"{ts}_{uid}",
+                    "layers": layer_info_list,
+                    "width": int(canvas_w),
+                    "height": int(canvas_h),
+                },
+                f,
+                indent=2,
+            )
+
+        # Include JSON in results so ViewComfy captures it too
+        results.append({
+            "filename": info_filename,
+            "subfolder": "",
+            "type": "output",
+        })
+
+        print(
+            f"[SeeThrough-API] {len(layer_info_list)} layers + metadata saved "
+            f"({len(results)} files total).",
+            flush=True,
+        )
+
+        return {"ui": {"images": results}}
+
+
 NODE_CLASS_MAPPINGS = {
     "SeeThrough_LoadLayerDiffModel": SeeThrough_LoadLayerDiffModel,
     "SeeThrough_LoadDepthModel": SeeThrough_LoadDepthModel,
@@ -737,6 +858,7 @@ NODE_CLASS_MAPPINGS = {
     "SeeThrough_GenerateDepth": SeeThrough_GenerateDepth,
     "SeeThrough_PostProcess": SeeThrough_PostProcess,
     "SeeThrough_SavePSD": SeeThrough_SavePSD,
+    "SeeThrough_SavePSD_API": SeeThrough_SavePSD_API,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -746,4 +868,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "SeeThrough_GenerateDepth": "SeeThrough Generate Depth",
     "SeeThrough_PostProcess": "SeeThrough Post Process",
     "SeeThrough_SavePSD": "SeeThrough Save PSD",
+    "SeeThrough_SavePSD_API": "SeeThrough Save PSD API",
 }
