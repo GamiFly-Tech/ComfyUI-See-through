@@ -38,19 +38,28 @@ Install dependencies:
 
 ```bash
 cd ComfyUI-See-through
+pip uninstall -y opencv-python opencv-contrib-python
 pip install -r requirements.txt
 ```
 
 Restart ComfyUI. The **SeeThrough** nodes will appear under the `SeeThrough` category.
 
+### Linux / Docker note
+
+This plugin now uses `opencv-python-headless` because ComfyUI is commonly deployed on headless Linux hosts. If you see an error like `libxcb.so.1: cannot open shared object file`, your environment still has a GUI-linked OpenCV wheel installed.
+
+- Reinstall this plugin's requirements after removing `opencv-python` / `opencv-contrib-python`
+- Or install the system package that provides `libxcb.so.1` (usually `libxcb1` on Debian/Ubuntu)
+
 ### Dependencies
 
-Only 4 additional Python packages beyond ComfyUI's base:
+Only 5 additional Python packages beyond ComfyUI's base:
 
 - `diffusers` — Hugging Face diffusion pipeline
 - `accelerate` — Model loading acceleration
-- `opencv-python` — Image processing
+- `opencv-python-headless` — Image processing on headless and desktop systems
 - `scikit-learn` — KMeans clustering for depth-based layer splitting
+- `matplotlib` — Plotting and visualization utilities
 
 ### Models
 

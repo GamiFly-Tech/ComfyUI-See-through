@@ -53,23 +53,36 @@ if _st_conflict_backup:
     print(f"[SeeThrough] Temporarily removed {len(_st_conflict_backup)} conflicting sys.modules entries: "
           f"{list(_st_conflict_backup.keys())[:10]}{'...' if len(_st_conflict_backup) > 10 else ''}", flush=True)
 
-print("[SeeThrough] Importing see-through modules...", flush=True)
-import cv2
-from safetensors.torch import load_file
 
-from modules.layerdiffuse.diffusers_kdiffusion_sdxl import KDiffusionStableDiffusionXLPipeline
-from modules.layerdiffuse.layerdiff3d import UNetFrameConditionModel
-from modules.layerdiffuse.vae import TransparentVAE
-from modules.marigold import MarigoldDepthPipeline
-from utils.cv import center_square_pad_resize, img_alpha_blending, smart_resize
-from utils.torchcv import cluster_inpaint_part
+def _restore_conflicting_modules():
+    for _key, _mod in _st_conflict_backup.items():
+        if _key not in sys.modules:
+            sys.modules[_key] = _mod
+
+print("[SeeThrough] Importing see-through modules...", flush=True)
+try:
+    import cv2
+    from safetensors.torch import load_file
+
+    from modules.layerdiffuse.diffusers_kdiffusion_sdxl import KDiffusionStableDiffusionXLPipeline
+    from modules.layerdiffuse.layerdiff3d import UNetFrameConditionModel
+    from modules.layerdiffuse.vae import TransparentVAE
+    from modules.marigold import MarigoldDepthPipeline
+    from utils.cv import center_square_pad_resize, img_alpha_blending, smart_resize
+    from utils.torchcv import cluster_inpaint_part
+except ImportError as exc:
+    if "libxcb.so.1" in str(exc):
+        raise ImportError(
+            "OpenCV failed to load because libxcb.so.1 is missing. "
+            "Install opencv-python-headless for headless Linux/containers, "
+            "or install the system package that provides libxcb.so.1 (usually libxcb1)."
+        ) from exc
+    raise
+finally:
+    _restore_conflicting_modules()
+    del _st_conflict_backup
 
 print("[SeeThrough] All see-through imports OK", flush=True)
-
-for _key, _mod in _st_conflict_backup.items():
-    if _key not in sys.modules:
-        sys.modules[_key] = _mod
-del _st_conflict_backup
 
 DEFAULT_LAYERDIFF_REPO = "layerdifforg/seethroughv0.0.2_layerdiff3d"
 DEFAULT_DEPTH_REPO = "24yearsold/seethroughv0.0.1_marigold"

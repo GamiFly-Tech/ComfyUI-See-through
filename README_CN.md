@@ -38,19 +38,28 @@ git clone https://github.com/dmMaze/ComfyUI-See-through.git
 
 ```bash
 cd ComfyUI-See-through
+pip uninstall -y opencv-python opencv-contrib-python
 pip install -r requirements.txt
 ```
 
 重启 ComfyUI，**SeeThrough** 节点将出现在 `SeeThrough` 分类下。
 
+### Linux / Docker 说明
+
+本插件现在默认使用 `opencv-python-headless`，因为 ComfyUI 常部署在无桌面的 Linux 或容器环境中。如果出现 `libxcb.so.1: cannot open shared object file`，说明当前环境里仍然装着依赖 X11 的 OpenCV 轮子。
+
+- 先卸载 `opencv-python` / `opencv-contrib-python`，再重新安装本插件依赖
+- 或者在系统里安装提供 `libxcb.so.1` 的包（Debian/Ubuntu 通常是 `libxcb1`）
+
 ### 依赖
 
-仅需在 ComfyUI 基础之上额外安装 4 个 Python 包：
+仅需在 ComfyUI 基础之上额外安装 5 个 Python 包：
 
 - `diffusers` — Hugging Face 扩散管线
 - `accelerate` — 模型加载加速
-- `opencv-python` — 图像处理
+- `opencv-python-headless` — 适用于无桌面和桌面环境的图像处理
 - `scikit-learn` — 基于深度的图层拆分（KMeans 聚类）
+- `matplotlib` — 绘图和可视化工具
 
 ### 模型
 
