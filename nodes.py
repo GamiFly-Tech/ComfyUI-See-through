@@ -6,6 +6,10 @@ from datetime import datetime
 import json
 from PIL import Image
 
+# Use HuggingFace mirror for regions where huggingface.co is blocked (e.g. mainland China)
+if not os.environ.get("HF_ENDPOINT"):
+    os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
 print("[SeeThrough] nodes.py: starting imports...", flush=True)
 
 import torch
@@ -87,7 +91,7 @@ finally:
 print("[SeeThrough] All see-through imports OK", flush=True)
 
 DEFAULT_LAYERDIFF_REPO = "layerdifforg/seethroughv0.0.2_layerdiff3d"
-DEFAULT_DEPTH_REPO = "24yearsold/seethroughv0.0.1_marigold"
+DEFAULT_DEPTH_REPO = "24yearsold/seethroughv0.0.1_marigold_nf4"
 
 VALID_BODY_PARTS_V2 = [
     "hair", "headwear", "face", "eyes", "eyewear", "ears", "earwear",
@@ -312,7 +316,8 @@ class SeeThrough_LoadDepthModel:
     @classmethod
     def INPUT_TYPES(s):
         local_models = _scan_model_dirs()
-        model_list = local_models + [DEFAULT_DEPTH_REPO]
+        extra_repos = ["24yearsold/seethroughv0.0.1_marigold_nf4", "24yearsold/seethroughv0.0.1_marigold", "prs-eth/marigold-depth-v1-1"]
+        model_list = local_models + [r for r in extra_repos if r not in local_models]
         return {
             "required": {
                 "model": (model_list, {"default": DEFAULT_DEPTH_REPO,
@@ -331,8 +336,14 @@ class SeeThrough_LoadDepthModel:
         pretrained = _resolve_model_path(model)
 
         print(f"[SeeThrough] Loading Marigold depth model from: {pretrained}", flush=True)
-        unet = UNetFrameConditionModel.from_pretrained(pretrained, subfolder="unet")
-        pipeline = MarigoldDepthPipeline.from_pretrained(pretrained, unet=unet)
+
+        # For custom see-through models, load custom unet; standard Marigold uses built-in components
+        if "prs-eth/marigold" in pretrained:
+            pipeline = MarigoldDepthPipeline.from_pretrained(pretrained)
+        else:
+            unet = UNetFrameConditionModel.from_pretrained(pretrained, subfolder="unet")
+            pipeline = MarigoldDepthPipeline.from_pretrained(pretrained, unet=unet)
+
         pipeline.to(device=device, dtype=dtype)
 
         print("[SeeThrough] Depth model loaded successfully", flush=True)
