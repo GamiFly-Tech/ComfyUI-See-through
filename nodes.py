@@ -6,9 +6,10 @@ from datetime import datetime
 import json
 from PIL import Image
 
-# Use HuggingFace mirror for regions where huggingface.co is blocked (e.g. mainland China)
-if not os.environ.get("HF_ENDPOINT"):
-    os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+# Networking defaults for cloud environments (including mainland China mirrors)
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+os.environ.setdefault("HF_HUB_READ_TIMEOUT", "120")
+os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "600")
 
 print("[SeeThrough] nodes.py: starting imports...", flush=True)
 
@@ -91,7 +92,7 @@ finally:
 print("[SeeThrough] All see-through imports OK", flush=True)
 
 DEFAULT_LAYERDIFF_REPO = "layerdifforg/seethroughv0.0.2_layerdiff3d"
-DEFAULT_DEPTH_REPO = "24yearsold/seethroughv0.0.1_marigold_nf4"
+DEFAULT_DEPTH_REPO = "24yearsold/seethroughv0.0.1_marigold"
 
 VALID_BODY_PARTS_V2 = [
     "hair", "headwear", "face", "eyes", "eyewear", "ears", "earwear",
@@ -315,13 +316,10 @@ class SeeThrough_LoadLayerDiffModel:
 class SeeThrough_LoadDepthModel:
     @classmethod
     def INPUT_TYPES(s):
-        local_models = _scan_model_dirs()
-        extra_repos = ["24yearsold/seethroughv0.0.1_marigold_nf4", "24yearsold/seethroughv0.0.1_marigold", "prs-eth/marigold-depth-v1-1"]
-        model_list = local_models + [r for r in extra_repos if r not in local_models]
         return {
             "required": {
-                "model": (model_list, {"default": DEFAULT_DEPTH_REPO,
-                                       "tooltip": "HuggingFace repo ID or local model folder in models/SeeThrough/"}),
+                "model": ("STRING", {"default": DEFAULT_DEPTH_REPO,
+                                      "tooltip": "HuggingFace repo ID (e.g. 24yearsold/seethroughv0.0.1_marigold_nf4) or local folder under models/SeeThrough/"}),
             },
         }
 
@@ -337,12 +335,40 @@ class SeeThrough_LoadDepthModel:
 
         print(f"[SeeThrough] Loading Marigold depth model from: {pretrained}", flush=True)
 
-        # For custom see-through models, load custom unet; standard Marigold uses built-in components
-        if "prs-eth/marigold" in pretrained:
-            pipeline = MarigoldDepthPipeline.from_pretrained(pretrained)
-        else:
-            unet = UNetFrameConditionModel.from_pretrained(pretrained, subfolder="unet")
-            pipeline = MarigoldDepthPipeline.from_pretrained(pretrained, unet=unet)
+        def _load_depth_model(pretrained_path):
+            # For custom see-through models, load custom unet; standard Marigold uses built-in components
+            if "prs-eth/marigold" in pretrained_path:
+                return MarigoldDepthPipeline.from_pretrained(pretrained_path)
+            unet = UNetFrameConditionModel.from_pretrained(pretrained_path, subfolder="unet")
+            return MarigoldDepthPipeline.from_pretrained(pretrained_path, unet=unet)
+
+        try:
+            pipeline = _load_depth_model(pretrained)
+        except Exception as e:
+            error_str = str(e)
+            error_lower = error_str.lower()
+            if "bitsandbytes" in error_lower and "_nf4" in model:
+                fallback_model = model.replace("_nf4", "")
+                fallback_pretrained = _resolve_model_path(fallback_model)
+                print(
+                    f"[SeeThrough] bitsandbytes not available; retrying with non-quantized model: {fallback_pretrained}",
+                    flush=True,
+                )
+                try:
+                    pipeline = _load_depth_model(fallback_pretrained)
+                except Exception as fallback_e:
+                    raise RuntimeError(
+                        f"bitsandbytes is missing and fallback model load also failed. "
+                        f"Tried '{pretrained}' then '{fallback_pretrained}'. "
+                        f"Fallback error: {fallback_e}"
+                    ) from fallback_e
+            elif "timed out" in error_lower or "connection" in error_lower:
+                raise RuntimeError(
+                    f"Failed to download model '{pretrained}' from HuggingFace/hf-mirror due to network timeout. "
+                    f"Pre-download it to models/SeeThrough or mount a persistent HF cache. Original error: {e}"
+                ) from e
+            else:
+                raise
 
         pipeline.to(device=device, dtype=dtype)
 
